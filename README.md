@@ -1,35 +1,38 @@
 # n8n Support Ticket Triage
 
-A production-ready n8n workflow that receives customer support requests, classifies their priority, assigns response targets, records tickets in Google Sheets, and sends Gmail alerts when escalation is required.
+I built this project to practise creating a complete n8n workflow that solves a realistic customer-support problem.
 
-## Business Problem
+The workflow collects support requests through a form, decides whether each ticket is High or Standard priority, assigns a response time, records the ticket in Google Sheets, and sends a Gmail alert when escalation is needed.
 
-Support teams often receive requests through multiple channels and must manually:
+## The Problem I Wanted to Solve
 
-* Copy customer information into a tracking system
-* Decide whether a ticket is urgent
-* Assign a priority and response time
-* Notify the responsible person
-* Maintain an accurate ticket log
+A small support team may receive many customer requests during the day. Someone then has to read each request, decide how urgent it is, record the details, and notify the right person.
 
-This process can be slow, inconsistent, and vulnerable to missed high-priority requests.
+Doing this manually takes time and creates several risks:
 
-## Solution
+* Urgent tickets may be missed
+* Priority decisions may be inconsistent
+* Customer information may be copied incorrectly
+* Response targets may not be assigned
+* Routine tickets may create unnecessary notifications
 
-This workflow provides a structured support form and automatically processes every submission.
+I wanted to create one workflow that handled these steps consistently.
 
-It:
+## What the Workflow Does
 
-1. Collects customer and issue information
+When a customer submits the support form, the workflow:
+
+1. Collects the customer’s name, email address, subject, message, and urgency choice
 2. Normalizes the submitted data
-3. Checks urgency and support-related keywords
-4. Assigns High or Standard priority
-5. Sets the appropriate response SLA
-6. Creates a consistent ticket record
-7. Logs the ticket in Google Sheets
-8. Sends a Gmail alert only when escalation is required
+3. Generates a unique ticket ID
+4. Checks the ticket against urgency and keyword rules
+5. Assigns High or Standard priority
+6. Sets a response SLA
+7. Creates a clean ticket record
+8. Adds the ticket to Google Sheets
+9. Sends a Gmail alert only when escalation is required
 
-## Workflow Overview
+## Workflow Diagram
 
 ```mermaid
 flowchart TD
@@ -45,6 +48,22 @@ flowchart TD
     H -->|No| J[Finish]
 ```
 
+## Project Screenshots
+
+All customer details shown below are fictional and were created for testing.
+
+### Complete Workflow
+
+![Complete n8n support ticket triage workflow](screenshots/workflow-overview.png)
+
+### Ticket Details in Google Sheets
+
+![Fictional support ticket details recorded in Google Sheets](screenshots/ticket-details.png)
+
+### Priority and Escalation Results
+
+![High and Standard ticket results](screenshots/triage-results.png)
+
 ## Tools Used
 
 * n8n Cloud
@@ -53,81 +72,81 @@ flowchart TD
 * IF nodes
 * Google Sheets
 * Gmail
-* Expressions and Boolean logic
+* n8n expressions
+* Boolean and OR logic
 
 ## Form Fields
 
-The customer support form collects:
+The support form collects five pieces of information:
 
-| Field           | Purpose                                 |
-| --------------- | --------------------------------------- |
-| Customer Name   | Identifies the customer                 |
-| Customer Email  | Provides contact information            |
-| Subject         | Summarizes the request                  |
-| Message         | Contains the full issue                 |
-| Urgent Response | Allows the customer to indicate urgency |
+| Field           | Purpose                              |
+| --------------- | ------------------------------------ |
+| Customer Name   | Identifies the customer              |
+| Customer Email  | Provides contact information         |
+| Subject         | Gives a short summary of the issue   |
+| Message         | Contains the customer’s full request |
+| Urgent Response | Lets the customer indicate urgency   |
 
-## Priority Rules
+## How Priority Is Decided
 
-A ticket becomes **High priority** when any configured condition is true.
+The workflow treats a ticket as High priority when at least one priority condition is true.
 
-The workflow uses OR logic for:
+The conditions use **OR logic** because a single urgent signal should be enough to escalate a ticket. Using AND logic would require every condition to be true, which would allow important tickets to be missed.
 
-* Customer selected urgent response
-* Subject or message contains `refund`
-* Subject or message contains `payment failed`
-* Subject or message contains `account access`
-* Subject or message contains `locked out`
+The High-priority conditions are:
 
-If none of these conditions match, the ticket is assigned Standard priority.
+* The customer selects an urgent response
+* The subject or message contains `refund`
+* The subject or message contains `payment failed`
+* The subject or message contains `account access`
+* The subject or message contains `locked out`
+
+If none of these rules match, the ticket follows the Standard branch.
 
 | Priority | Response SLA | Escalation   |
 | -------- | -----------: | ------------ |
 | High     |      2 hours | Required     |
 | Standard |     24 hours | Not required |
 
-## Node-by-Node Explanation
+## How Each Node Works
 
 ### 1. On form submission
 
-Starts the workflow when a customer submits the production support form.
+This node starts the workflow when a customer submits the production support form.
 
 ### 2. Normalize Form Data
 
-Creates a consistent data structure and:
+This Edit Fields node gives the data consistent field names and creates the initial ticket information.
 
-* Generates a ticket ID
-* Maps the customer fields
-* Converts the urgency response into a Boolean value
-* Sets the initial status to `New`
-
-Example ticket ID expression:
+The ticket ID is generated with:
 
 ```javascript
 {{ 'TKT-' + $now.toMillis() }}
 ```
 
-Urgency conversion:
+The Yes/No urgency answer is converted into a Boolean value with:
 
 ```javascript
 {{ $json.urgent_response === 'Yes' }}
 ```
 
+The initial ticket status is set to `New`.
+
 ### 3. Determine Priority
 
-Checks the urgency value and searches the combined subject and message for priority keywords.
+This IF node checks the Boolean urgency value and searches the subject and message for the configured keywords.
 
-Example combined-text expression:
+The subject and message are combined and converted to lowercase:
 
 ```javascript
 {{ ($json.subject + ' ' + $json.message).toLowerCase() }}
 ```
 
-The conditions use OR logic so one matching rule is enough to create a High-priority ticket.
+Converting the text to lowercase makes the keyword checks more consistent.
 
 ### 4. Set High Priority
 
-Adds:
+A High-priority ticket receives:
 
 ```text
 priority: High
@@ -137,7 +156,7 @@ escalation_required: true
 
 ### 5. Set Standard Priority
 
-Adds:
+A Standard ticket receives:
 
 ```text
 priority: Standard
@@ -147,7 +166,9 @@ escalation_required: false
 
 ### 6. Prepare Ticket Record
 
-Creates the final standardized ticket record with:
+This node creates the final structure that will be sent to Google Sheets.
+
+It includes:
 
 * Ticket ID
 * Triage timestamp
@@ -161,35 +182,31 @@ Creates the final standardized ticket record with:
 * Escalation requirement
 * Status
 
-The final status is set to `Triaged`.
+The final status is changed to `Triaged`.
 
-Timestamp expression:
+The timestamp is generated with:
 
 ```javascript
 {{ $now.toISO() }}
 ```
 
-### 7. Log Ticket in Google Sheets
-
-Appends each processed ticket to a central support log for tracking and reporting.
-
-### 8. Escalation Required?
-
-Checks whether:
+I also added fallback logic for the priority and SLA fields:
 
 ```javascript
-{{ $json.escalation_required }}
+{{ $json.priority ?? ($json.escalation_required ? 'High' : 'Standard') }}
 ```
 
-is true.
+```javascript
+{{ $json.response_sla_hours ?? ($json.escalation_required ? 2 : 24) }}
+```
 
-### 9. Send Escalation Alert
+These expressions use the upstream values when available. If a value is missing, the workflow derives the correct result from the escalation flag.
 
-Sends a Gmail notification for High-priority tickets only. Standard tickets finish without generating an unnecessary alert.
+### 7. Log Ticket in Google Sheets
 
-## Google Sheets Output
+This node appends the final ticket record to a Google Sheets log.
 
-Each ticket is recorded with the following columns:
+The sheet contains:
 
 ```text
 ticket_id
@@ -205,73 +222,129 @@ escalation_required
 status
 ```
 
+### 8. Escalation Required?
+
+This IF node checks:
+
+```javascript
+{{ $json.escalation_required }}
+```
+
+If the value is true, the ticket continues to Gmail. If it is false, the workflow finishes without sending an alert.
+
+### 9. Send Escalation Alert
+
+This node sends an email containing the ticket ID, customer information, issue details, priority, SLA, status, and triage time.
+
+Only escalated tickets reach this node.
+
 ## Testing
 
-The workflow was tested with multiple scenarios.
+I tested both workflow branches with fictional customer information.
 
-| Scenario                   | Expected Result                | Result |
-| -------------------------- | ------------------------------ | ------ |
-| Urgent request             | High priority and email alert  | Passed |
-| Refund keyword             | High priority and email alert  | Passed |
-| Payment failure keyword    | High priority and email alert  | Passed |
-| Standard delivery question | Standard priority and no email | Passed |
-| Production form submission | Ticket logged successfully     | Passed |
+| Test                            | Expected Result              | Outcome |
+| ------------------------------- | ---------------------------- | ------- |
+| Urgent response selected        | High, 2 hours, email alert   | Passed  |
+| Refund keyword present          | High, 2 hours, email alert   | Passed  |
+| Payment failure keyword present | High, 2 hours, email alert   | Passed  |
+| Normal delivery question        | Standard, 24 hours, no email | Passed  |
+| Production form submission      | New Google Sheets row        | Passed  |
 
-Both the High and Standard branches were tested end to end.
+I also confirmed that Standard tickets do not trigger Gmail.
 
-## Troubleshooting and Design Decisions
+## Problems I Solved
 
-### OR instead of AND
+### Form.io was not the correct trigger
 
-OR logic was selected because a ticket should become High priority when any priority condition matches. AND logic would incorrectly require every condition to be true.
+I initially selected the Form.io Trigger. I replaced it with n8n’s native Form Trigger so the form could be created and managed directly inside n8n.
 
-### Removed the Merge node
+### The Merge node waited for both branches
 
-A Merge node in Append mode waited for data from both priority branches. The IF node sends each ticket through only one branch, so both priority nodes were connected directly to the shared preparation node.
+I originally added a Merge node after the High and Standard branches.
 
-### Explicit final field mapping
+The Merge node in Append mode waited for data from both branches, but an IF node sends each ticket through only one branch. I removed the Merge node and connected both priority nodes directly to Prepare Ticket Record.
 
-The Prepare Ticket Record node explicitly maps the final fields. This prevents duplicate fields and ensures the final status and timestamp are consistent.
+### Duplicate status fields appeared
 
-### Refreshed Google Sheets mappings
+The incoming data contained `status: New`, while the preparation node added `status: Triaged`.
 
-After spreadsheet column names were standardized, the Google Sheets node mappings were refreshed and verified.
+I fixed this by explicitly mapping the final fields and keeping **Include Other Input Fields** turned off in Prepare Ticket Record.
+
+### Google Sheets mappings needed refreshing
+
+After changing spreadsheet column names, the Google Sheets node still remembered the old headers.
+
+I refreshed the sheet fields and rebuilt the mappings using consistent names such as:
+
+```text
+customer_name
+customer_email
+```
+
+### Standard priority values became null
+
+The Standard node correctly produced `Standard` and `24`, but the preparation step returned null values during a production execution.
+
+I corrected the data types and added fallback expressions in Prepare Ticket Record. A new production test then recorded:
+
+```text
+Standard | 24 | FALSE | Triaged
+```
+
+## What I Learned
+
+This project helped me understand that building a workflow is only part of the job. The data must also be checked at every stage.
+
+My troubleshooting process was:
+
+1. Find the last node with correct output
+2. Open the next node
+3. Compare its input and output
+4. Change one setting at a time
+5. Run a fresh test
+6. Verify the result in the final connected system
+
+This approach helped me find problems in the branching, field mapping, data types, and published workflow behaviour.
 
 ## Business Value
 
 This workflow can help a support team:
 
-* Respond faster to urgent issues
+* Respond to urgent requests faster
 * Apply consistent priority rules
 * Reduce manual data entry
-* Maintain a structured ticket history
-* Prevent important requests from being overlooked
-* Reduce unnecessary notifications for routine requests
+* Maintain a searchable ticket log
+* Assign clear response targets
+* Avoid unnecessary email alerts
+* Reduce the risk of missing important customer issues
 
-## Security and Privacy
+## Privacy and Security
 
-The public project documentation does not contain:
+The public repository does not include:
 
-* Account credentials
+* Login credentials
 * API keys
 * Private form URLs
 * Google Sheet IDs
-* Personal customer data
-* Private email addresses
+* Credential identifiers
+* Real customer information
+* Personal recipient email addresses
 
-## Future Improvements
+All information shown in the screenshots is fictional test data.
 
-Possible extensions include:
+## Possible Improvements
 
-* Dedicated error notifications
-* Slack or Microsoft Teams escalation
-* Automatic customer confirmation emails
-* AI-based ticket categorization
+Future versions could include:
+
+* Error notifications
+* Customer confirmation emails
+* Slack or Microsoft Teams alerts
+* AI-based ticket categories
+* Automatic department assignment
 * Duplicate-ticket detection
-* Ticket assignment by department
 * SLA breach reminders
 * Dashboard reporting
 
 ## Project Status
 
-**Completed, published, and production-tested.**
+Completed, published, and tested through the production form.
